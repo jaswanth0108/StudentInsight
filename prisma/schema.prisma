@@ -1,0 +1,584 @@
+// Prisma Schema — Student Personality & Well-Being Assessment Platform
+// Database: SQLite (for zero-config local development; can switch to postgresql for production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────
+
+enum UserRole {
+  STUDENT
+  COUNSELOR
+  ADMIN
+}
+
+enum QuestionType {
+  MCQ
+  LIKERT
+  YES_NO
+  RATING
+  OPEN_ENDED
+}
+
+enum AssessmentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ResponseStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum SessionStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  PENDING
+}
+
+enum NotificationType {
+  ASSESSMENT_ASSIGNED
+  ASSESSMENT_REMINDER
+  ASSESSMENT_COMPLETED
+  COUNSELING_APPOINTMENT
+  FOLLOW_UP_REMINDER
+  STUDENT_COMPLETED
+  FOLLOW_UP_RECOMMENDED
+  APPOINTMENT_REMINDER
+  SYSTEM_ALERT
+  REPORT_READY
+}
+
+enum FollowUpStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AuditAction {
+  USER_LOGIN
+  USER_LOGOUT
+  PROFILE_VIEWED
+  ASSESSMENT_CREATED
+  ASSESSMENT_MODIFIED
+  ASSESSMENT_PUBLISHED
+  ASSESSMENT_SUBMITTED
+  RESULTS_VIEWED
+  NOTE_CREATED
+  REPORT_EXPORTED
+  PERMISSION_CHANGED
+  SESSION_CREATED
+  FOLLOW_UP_CREATED
+  CONSENT_GIVEN
+  STUDENT_FLAGGED
+}
+
+enum SupportLevel {
+  LOW_SUPPORT
+  MODERATE_SUPPORT
+  FOLLOW_UP_RECOMMENDED
+  ASSESSMENT_INCOMPLETE
+  IMPROVING
+  STABLE
+  NEEDS_REASSESSMENT
+}
+
+// ─────────────────────────────────────────────────────────
+// USERS & ROLES
+// ─────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String
+  role          UserRole
+  name          String
+  emailVerified DateTime?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  student   Student?
+  counselor Counselor?
+  admin     Admin?
+
+  sessions      AuthSession[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model AuthSession {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([token])
+}
+
+// ─────────────────────────────────────────────────────────
+// INSTITUTION STRUCTURE
+// ─────────────────────────────────────────────────────────
+
+model Institution {
+  id          String   @id @default(cuid())
+  name        String
+  code        String   @unique
+  description String?
+  logoUrl     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  departments  Department[]
+  counselors   Counselor[]
+  assessments  Assessment[]
+}
+
+model Department {
+  id            String   @id @default(cuid())
+  institutionId String
+  name          String
+  code          String
+  description   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  institution Institution @relation(fields: [institutionId], references: [id])
+  classes     Class[]
+  students    Student[]
+
+  @@unique([institutionId, code])
+  @@index([institutionId])
+}
+
+model Class {
+  id           String   @id @default(cuid())
+  departmentId String
+  name         String
+  year         Int
+  section      String?
+  academicYear String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id])
+  students   Student[]
+
+  @@index([departmentId])
+}
+
+// ─────────────────────────────────────────────────────────
+// STUDENT
+// ─────────────────────────────────────────────────────────
+
+model Student {
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  studentId    String    @unique  // e.g. STU-1024
+  departmentId String?
+  classId      String?
+  counselorId  String?
+  dateOfBirth  DateTime?
+  gender       String?
+  phoneNumber  String?
+  avatarUrl    String?
+  supportLevel SupportLevel @default(STABLE)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [departmentId], references: [id])
+  class      Class?      @relation(fields: [classId], references: [id])
+  counselor  Counselor?  @relation(fields: [counselorId], references: [id])
+
+  assessmentResponses AssessmentResponse[]
+  studentProfile      StudentProfile?
+  counselingSessions  CounselingSession[]
+  counselingNotes     CounselingNote[]
+  consents            Consent[]
+  followUpTasks       FollowUpTask[]
+
+  @@index([studentId])
+  @@index([counselorId])
+  @@index([departmentId])
+  @@index([supportLevel])
+}
+
+model StudentProfile {
+  id        String   @id @default(cuid())
+  studentId String   @unique
+  // 20 personality dimension scores (0-100)
+  empathy              Float @default(0)
+  humanity             Float @default(0)
+  socialInteraction    Float @default(0)
+  introversion         Float @default(0)
+  extroversion         Float @default(0)
+  communication        Float @default(0)
+  confidence           Float @default(0)
+  stress               Float @default(0)
+  academicPressure     Float @default(0)
+  emotionalWellbeing   Float @default(0)
+  motivation           Float @default(0)
+  discipline           Float @default(0)
+  resilience           Float @default(0)
+  adaptability         Float @default(0)
+  leadership           Float @default(0)
+  cooperation          Float @default(0)
+  behavioralTendencies Float @default(0)
+  socialSupport        Float @default(0)
+  selfAwareness        Float @default(0)
+  generalWellbeing     Float @default(0)
+  // AI-generated summary
+  aiSummary            String?
+  // Flags
+  requiresFollowUp     Boolean @default(false)
+  flagReason           String?
+  // Last updated from assessment
+  lastAssessmentId     String?
+  updatedAt            DateTime @updatedAt
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([requiresFollowUp])
+}
+
+// ─────────────────────────────────────────────────────────
+// COUNSELOR
+// ─────────────────────────────────────────────────────────
+
+model Counselor {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  institutionId String?
+  staffId       String   @unique
+  specialization String?
+  phoneNumber   String?
+  avatarUrl     String?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  institution Institution? @relation(fields: [institutionId], references: [id])
+
+  students          Student[]
+  counselingSessions CounselingSession[]
+  counselingNotes   CounselingNote[]
+  followUpTasks     FollowUpTask[]
+
+  @@index([institutionId])
+}
+
+// ─────────────────────────────────────────────────────────
+// ADMIN
+// ─────────────────────────────────────────────────────────
+
+model Admin {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  permissions String   @default("ALL_MANAGE,EXPORT_REPORTS") // comma-separated
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────
+// ASSESSMENTS
+// ─────────────────────────────────────────────────────────
+
+model Assessment {
+  id            String           @id @default(cuid())
+  institutionId String?
+  title         String
+  description   String?
+  instructions  String?
+  version       Int              @default(1)
+  status        AssessmentStatus @default(DRAFT)
+  timeLimit     Int?             // minutes, null = unlimited
+  isAnonymous   Boolean          @default(false)
+  createdBy     String           // userId
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  publishedAt   DateTime?
+
+  institution Institution? @relation(fields: [institutionId], references: [id])
+
+  questions           AssessmentQuestion[]
+  assessmentResponses AssessmentResponse[]
+  assessmentVersions  AssessmentVersion[]
+
+  @@index([status])
+  @@index([institutionId])
+}
+
+model AssessmentVersion {
+  id           String   @id @default(cuid())
+  assessmentId String
+  version      Int
+  snapshot     String   // full JSON string snapshot of questions at this version
+  createdAt    DateTime @default(now())
+
+  assessment Assessment @relation(fields: [assessmentId], references: [id])
+
+  @@unique([assessmentId, version])
+}
+
+model QuestionCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  key         String   @unique  // e.g. "stress", "empathy"
+  description String?
+  color       String?  // hex color for UI
+  icon        String?
+  createdAt   DateTime @default(now())
+
+  questions   AssessmentQuestion[]
+}
+
+model AssessmentQuestion {
+  id           String       @id @default(cuid())
+  assessmentId String
+  categoryId   String?
+  text         String
+  type         QuestionType
+  weight       Float        @default(1.0)
+  isRequired   Boolean      @default(true)
+  isReversed   Boolean      @default(false)  // reverse scoring
+  order        Int          @default(0)
+  helpText     String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  assessment   Assessment       @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  category     QuestionCategory? @relation(fields: [categoryId], references: [id])
+  options      QuestionOption[]
+  answers      ResponseAnswer[]
+
+  @@index([assessmentId, order])
+}
+
+model QuestionOption {
+  id         String   @id @default(cuid())
+  questionId String
+  text       String
+  value      Float    // numeric value for scoring (0-100)
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  question AssessmentQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answers  ResponseAnswer[]
+
+  @@index([questionId])
+}
+
+// ─────────────────────────────────────────────────────────
+// RESPONSES
+// ─────────────────────────────────────────────────────────
+
+model AssessmentResponse {
+  id           String         @id @default(cuid())
+  assessmentId String
+  studentId    String
+  status       ResponseStatus @default(NOT_STARTED)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  version      Int            @default(1)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  assessment      Assessment       @relation(fields: [assessmentId], references: [id])
+  student         Student          @relation(fields: [studentId], references: [id])
+  answers         ResponseAnswer[]
+  categoryScores  CategoryScore[]
+  consentGiven    Boolean          @default(false)
+  consentAt       DateTime?
+  aiSummary       String?
+  requiresFlag    Boolean          @default(false)
+  flagReason      String?
+
+  @@unique([assessmentId, studentId])
+  @@index([studentId])
+  @@index([assessmentId])
+  @@index([status])
+}
+
+model ResponseAnswer {
+  id           String   @id @default(cuid())
+  responseId   String
+  questionId   String
+  optionId     String?  // for MCQ/Likert/Yes-No
+  numericValue Float?   // for Rating (1-10)
+  textValue    String?  // for Open-ended
+  normalizedScore Float? // 0-100 normalized
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  response  AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  question  AssessmentQuestion @relation(fields: [questionId], references: [id])
+  option    QuestionOption?    @relation(fields: [optionId], references: [id])
+
+  @@unique([responseId, questionId])
+  @@index([responseId])
+}
+
+model CategoryScore {
+  id          String   @id @default(cuid())
+  responseId  String
+  categoryKey String   // e.g. "stress", "empathy"
+  score       Float    // 0-100
+  label       String   // e.g. "Elevated", "Strong"
+  questionCount Int
+  createdAt   DateTime @default(now())
+
+  response AssessmentResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, categoryKey])
+  @@index([responseId])
+}
+
+// ─────────────────────────────────────────────────────────
+// COUNSELING
+// ─────────────────────────────────────────────────────────
+
+model CounselingSession {
+  id          String        @id @default(cuid())
+  studentId   String
+  counselorId String
+  title       String
+  scheduledAt DateTime
+  duration    Int?          // minutes
+  status      SessionStatus @default(SCHEDULED)
+  location    String?
+  meetingUrl  String?
+  summary     String?
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  student   Student   @relation(fields: [studentId], references: [id])
+  counselor Counselor @relation(fields: [counselorId], references: [id])
+
+  notes CounselingNote[]
+
+  @@index([studentId])
+  @@index([counselorId])
+  @@index([scheduledAt])
+}
+
+model CounselingNote {
+  id          String   @id @default(cuid())
+  sessionId   String?
+  counselorId String
+  studentId   String
+  content     String
+  isPrivate   Boolean  @default(true)
+  tags        String   @default("") // comma-separated tags
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  session   CounselingSession? @relation(fields: [sessionId], references: [id])
+  counselor Counselor          @relation(fields: [counselorId], references: [id])
+  student   Student            @relation(fields: [studentId], references: [id])
+
+  @@index([studentId])
+  @@index([counselorId])
+}
+
+model FollowUpTask {
+  id          String         @id @default(cuid())
+  studentId   String
+  counselorId String
+  title       String
+  description String?
+  dueDate     DateTime?
+  status      FollowUpStatus @default(PENDING)
+  priority    Int            @default(1) // 1=low, 2=medium, 3=high
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  student   Student   @relation(fields: [studentId], references: [id])
+  counselor Counselor @relation(fields: [counselorId], references: [id])
+
+  @@index([studentId])
+  @@index([counselorId])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────
+// CONSENT
+// ─────────────────────────────────────────────────────────
+
+model Consent {
+  id           String   @id @default(cuid())
+  studentId    String
+  assessmentId String
+  givenAt      DateTime @default(now())
+  ipAddress    String?
+  userAgent    String?
+
+  student Student @relation(fields: [studentId], references: [id])
+
+  @@unique([studentId, assessmentId])
+}
+
+// ─────────────────────────────────────────────────────────
+// NOTIFICATIONS
+// ─────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+}
+
+// ─────────────────────────────────────────────────────────
+// AUDIT LOGS
+// ─────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         String      @id @default(cuid())
+  userId     String
+  action     AuditAction
+  resource   String      // e.g. "student:STU-1024"
+  details    String?     // JSON string
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
